@@ -1,0 +1,209 @@
+version: '3.9'
+
+x-hosts: &hosts
+  extra_hosts:
+    - python:10.5.0.2
+    - postgres:10.5.0.3
+    - greenplum:10.5.0.4
+    - redis:10.5.0.5
+    - airflow-webserver:10.5.0.6
+    - airflow-scheduler:10.5.0.7
+    - airflow-worker:10.5.0.8
+    - airflow-flower:10.5.0.9
+    - hadoop-namenode:10.5.0.10
+    - hadoop-datanode:10.5.0.11
+    - hadoop-resourcemanager:10.5.0.12
+    - hadoop-nodemanager:10.5.0.13
+    - spark-master:10.5.0.14
+    - spark-worker:10.5.0.15
+
+x-airflow: &airflow
+  <<: *hosts
+  build: docker/airflow
+  image: local/airflow
+  env_file: docker-compose.env
+  volumes:
+    - airflow:/opt/airflow
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/plugins:/opt/airflow/plugins
+#  profiles:
+#    - airflow
+  depends_on:
+    - postgres
+    - redis
+
+x-hadoop: &hadoop
+  <<: *hosts
+  build: docker/hadoop
+  image: local/hadoop:2.10
+  volumes:
+    - hadoop:/opt/hadoop/data
+
+x-spark: &spark
+  <<: *hadoop
+
+services:
+  python:
+    <<: *hosts
+    build: .
+    image: local/python:3.8
+    tty: true
+    ports:
+      - 4040:4040
+    volumes:
+      - ./app:/app
+    hostname: python
+    networks:
+      default:
+        ipv4_address: 10.5.0.2
+
+  postgres:
+    build: docker/postgres
+    image: local/postgre:11.11
+    env_file: docker-compose.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    hostname: postgres
+    networks:
+      default:
+        ipv4_address: 10.5.0.3
+
+  greenplum:
+    build: docker/greenplum
+    image: local/greenplum:6.8
+    tty: true
+    env_file: docker-compose.env
+    ports:
+      - "5433:5433"
+    volumes:
+      - greenplum:/opt/greenplum-db-6.8.1/data
+    hostname: greenplum
+    networks:
+      default:
+        ipv4_address: 10.5.0.4
+
+  redis:
+    image: redis:latest
+    ports:
+      - 6379:6379
+    hostname: redis
+    networks:
+      default:
+        ipv4_address: 10.5.0.5
+
+  airflow-webserver:
+    <<: *airflow
+    command: webserver
+    ports:
+      - 8000:8080
+    hostname: airflow-webserver
+    networks:
+      default:
+        ipv4_address: 10.5.0.6
+
+  airflow-scheduler:
+    <<: *airflow
+    command: scheduler
+    hostname: airflow-scheduler
+    networks:
+      default:
+        ipv4_address: 10.5.0.7
+
+  airflow-worker:
+    <<: *airflow
+    command: celery worker
+    ports:
+      - 8793:8793
+    hostname: airflow-worker
+    networks:
+      default:
+        ipv4_address: 10.5.0.8
+
+  airflow-flower:
+    <<: *airflow
+    command: celery flower
+    ports:
+      - 5555:5555
+    hostname: airflow-flower
+    networks:
+      default:
+        ipv4_address: 10.5.0.9
+
+  hadoop-namenode:
+    <<: *hadoop
+    entrypoint: hdfs namenode
+    ports:
+      - 5070:5070
+    hostname: hadoop-namenode
+    networks:
+      default:
+        ipv4_address: 10.5.0.10
+
+  hadoop-datanode:
+    <<: *hadoop
+    entrypoint: hdfs datanode
+    ports:
+      - 5075:5075
+    hostname: hadoop-datanode
+    networks:
+      default:
+        ipv4_address: 10.5.0.11
+
+  hadoop-resourcemanager:
+    <<: *hadoop
+    entrypoint: yarn resourcemanager
+    ports:
+      - 8088:8088
+    hostname: hadoop-resourcemanager
+    networks:
+      default:
+        ipv4_address: 10.5.0.12
+
+  hadoop-nodemanager:
+    <<: *hadoop
+    entrypoint: yarn nodemanager
+    ports:
+      - 8042:8042
+    hostname: hadoop-nodemanager
+    networks:
+      default:
+        ipv4_address: 10.5.0.13
+
+  spark-master:
+    <<: *spark
+    entrypoint: spark-class org.apache.spark.deploy.master.Master --ip spark-master --port 7077 --webui-port 8080
+    ports:
+      - 8080:8080
+      - 7077:7077
+      - 4041:4040
+    hostname: spark-master
+    networks:
+      default:
+        ipv4_address: 10.5.0.14
+
+  spark-worker:
+    <<: *spark
+    entrypoint: spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077 -i spark-worker
+    ports:
+      - 8081:8081
+    hostname: spark-worker
+    networks:
+      default:
+        ipv4_address: 10.5.0.15
+
+volumes:
+  postgres:
+  greenplum:
+  airflow:
+  hadoop:
+
+networks:
+  default:
+    driver: bridge
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: 10.5.0.0/16
+          gateway: 10.5.0.1
