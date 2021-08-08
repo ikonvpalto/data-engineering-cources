@@ -1,7 +1,11 @@
 url: https://robot-dreams-de-api.herokuapp.com
 endpoints:
-  auth: /auth
-  out_of_stock: /out_of_stock
+  auth:
+    address: /auth
+    timeout: 5
+  out_of_stock:
+    address: /out_of_stock
+    timeout: 5
 auth_data:
   username: rd_dreams
   password: djT6LasE
